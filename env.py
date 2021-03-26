@@ -211,6 +211,6 @@ def pixelCollision(rect1, rect2, hitmask1, hitmask2):
 if __name__ == '__main__':
     game = GameState()
     img, reward, terminal = None, None, None
-    while not terminal:
+    while True:
         img, reward, terminal = game.frame_step(np.array([0, 1]))
         print(reward)
