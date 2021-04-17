@@ -1,6 +1,6 @@
 # Deep Flappy Bird
 A Crazy Flappy Bird agent trained with Deep Reinforcement Learning 
-> Support training on multiple platform     
+> Support training on multiple platforms     
 > e.g., Amazon EC2, Amazon SageMaker Notebook, Google Cloud Compute Engine, Google Colab
 
 ![game play](https://github.com/sizzle0121/Deep-FlappyBird/blob/main/GIF.gif)
