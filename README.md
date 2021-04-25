@@ -5,7 +5,7 @@ A Crazy Flappy Bird agent trained with Deep Reinforcement Learning
 
 ![game play](https://github.com/sizzle0121/Deep-FlappyBird/blob/main/GIF.gif)
 
-[30 minutes version](https://drive.google.com/file/d/1Nj9o7Mr9_VjhxlpC_Ip4RUpLq5VtNMmI/view?usp=sharing)
+[40 minutes version](https://drive.google.com/file/d/1EqPkHSgi2H_yW2NyRCQxY58HHk1lXriW/view?usp=sharing)
 
 ### Contributors
 > Name: Fu-Lin Hsu     
