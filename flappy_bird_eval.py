@@ -1,10 +1,5 @@
 #! pip install pygame
 
-import torch
-import torchvision
-print(torch.__version__)
-print(torchvision.__version__)
-
 #from google.colab import drive
 #drive.mount('/content/drive')
 
@@ -317,16 +312,13 @@ class DQN_net(torch.nn.Module):
     self.conv2 = torch.nn.Conv2d(32, 64, kernel_size = 4, stride = 2, padding = 1)
     self.conv3 = torch.nn.Conv2d(64, 64, kernel_size = 3, stride = 1, padding = 1)
     self.fc1 = torch.nn.Linear(6400, 512)
-    #self.fc1 = torch.nn.Linear(1600, 512)
     self.fc2 = torch.nn.Linear(512, out_actions)
 
   def forward(self, x):
-    #x = self.maxpool1(F.relu(self.conv1(x)))
     x = F.relu(self.conv1(x))  # (10, 10, 32)
     x = F.relu(self.conv2(x)) # (5, 5, 64)
     x = F.relu(self.conv3(x)) # (5, 5, 64)
     x = x.reshape(-1, 6400)  # (1, 1600)
-    #x = x.reshape(-1, 1600)
     x = F.relu(self.fc1(x)) # (1, 512)
     x = self.fc2(x) # (1, 2)
     return x
