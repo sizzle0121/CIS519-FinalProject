@@ -1,13 +1,27 @@
+#! pip install pygame
+
+import torch
+import torchvision
+print(torch.__version__)
+print(torchvision.__version__)
+
+#from google.colab import drive
+#drive.mount('/content/drive')
+
 import pygame
 from pygame.locals import *
 from itertools import cycle
 import random
 import numpy as np
+import pandas as pd
 import cv2
 import sys
 import os
 os.environ['SDL_VIDEODRIVER'] = 'dummy' # Run Headless Pygame environment
 
+#! mkdir /content/assets
+#! mkdir /content/assets/sprites
+#! mv *.png /content/assets/sprites
 
 """## Load Game Resources"""
 
@@ -20,7 +34,7 @@ def getHitmask(image):
             mask[x].append(bool(image.get_at((x,y))[3]))
     return mask
 
-def load(BASE_PATH = './'):
+def load(BASE_PATH = '/content/'):#'/content/drive/MyDrive/'):
     # path of player with different states
     PLAYER_PATH = (
             BASE_PATH + 'assets/sprites/redbird-upflap.png',
@@ -292,7 +306,6 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def weights_init(layer):
   if isinstance(layer, torch.nn.Conv2d) or isinstance(layer, torch.nn.Linear):
-    #torch.nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity='relu')
     torch.nn.init.normal_(layer.weight, mean = 0., std = 0.01)
     layer.bias.data.fill_(0.01)
 
@@ -300,31 +313,23 @@ class DQN_net(torch.nn.Module):
   def __init__(self, in_channels = 4, out_actions = 2):
     super(DQN_net, self).__init__()
     self.conv1 = torch.nn.Conv2d(in_channels, 32, kernel_size = 8, stride = 4, padding = 2)
+    self.maxpool1 = torch.nn.MaxPool2d(2, 2)
     self.conv2 = torch.nn.Conv2d(32, 64, kernel_size = 4, stride = 2, padding = 1)
     self.conv3 = torch.nn.Conv2d(64, 64, kernel_size = 3, stride = 1, padding = 1)
-    # State Value Stream
-    self.state_fc1 = torch.nn.Linear(6400, 512)
-    self.state_fc2 = torch.nn.Linear(512, 1)
-    # Action Advantage
-    self.action_fc1 = torch.nn.Linear(6400, 512)
-    self.action_fc2 = torch.nn.Linear(512, out_actions)
+    self.fc1 = torch.nn.Linear(6400, 512)
+    #self.fc1 = torch.nn.Linear(1600, 512)
+    self.fc2 = torch.nn.Linear(512, out_actions)
 
   def forward(self, x):
-    # (84, 84, 4)
+    #x = self.maxpool1(F.relu(self.conv1(x)))
     x = F.relu(self.conv1(x))  # (10, 10, 32)
     x = F.relu(self.conv2(x)) # (5, 5, 64)
     x = F.relu(self.conv3(x)) # (5, 5, 64)
-    x = x.reshape(-1, 6400)  # (1, 6400)
-    # State Value Stream
-    state_x = F.relu(self.state_fc1(x)) # (1, 512)
-    state_x = self.state_fc2(state_x) # (1, 1)
-    # Action Advantage
-    action_x = F.relu(self.action_fc1(x)) # (1, 512)
-    action_x = self.action_fc2(action_x) # (1, 2)
-    # Combine both to Q(s, a)
-    B = action_x.shape[0]
-    output_x = state_x + (action_x - torch.mean(action_x, dim = -1).reshape(B, 1))
-    return output_x
+    x = x.reshape(-1, 6400)  # (1, 1600)
+    #x = x.reshape(-1, 1600)
+    x = F.relu(self.fc1(x)) # (1, 512)
+    x = self.fc2(x) # (1, 2)
+    return x
 
 """# Replay Memory"""
 
@@ -390,8 +395,6 @@ class DQN:
     # Optimize
     self.optimizer.zero_grad()
     loss.backward()
-    for param in self.policy_net.parameters():
-        param.grad.data.clamp_(-1, 1)
     self.optimizer.step()
 
     if self.replace_counter % self.replace_period == 0:
@@ -435,130 +438,74 @@ class DQN:
         'target_net_state_dict': self.target_net.state_dict(),
         'optimizer_state_dict': self.optimizer.state_dict(),
         'epsilon': self.epsilon
-    }, './new_dueling_checkpoint' + str(episode) + '.tar')
+    }, './checkpoint' + str(episode) + '.tar')
 
+"""# Write CSV"""
 
-"""# DQN Process
-
-"""
-
-OBSERVE = 10000
-EXPLORE = 3000000
-EPISODE = 1000000
-ACTION_IDLE = 1
-SAVE_ITER = 5000
-STACK_FRAMES = 4
-LOAD = False
-
-# Initialize Game
+EP = 30
 game = GameState()
-episode = 1
-iterations = 0
-# Initialize Model
-if not LOAD:
-  dqn = DQN(memory_capacity = 50000,
+CSV = False
+VIDEO = True
+dqn = DQN(memory_capacity = 50000,
             batch_size = 32,
-            epsilon = 0.1,
-            explore = EXPLORE,
-            replace_period = 5000,
+            epsilon = 0.0001,
+            explore = 100000,
+            replace_period = 100,
             alpha = 1e-6,
             gamma = 0.99,
-            num_frames = STACK_FRAMES,
+            num_frames = 4,
             num_actions = 2)
-elif LOAD:
-  dqn = DQN(memory_capacity = 50000,
-            batch_size = 32,
-            epsilon = 0.1,
-            explore = EXPLORE,
-            replace_period = 5000,
-            alpha = 1e-6,
-            gamma = 0.99,
-            num_frames = STACK_FRAMES,
-            num_actions = 2)
-  # Populate
-  ckpts = [3883, 3981, 4079, 4174, 4271, 4366, 4464, 4561, 4659, 4756]
-  for ckpt in ckpts:
-    dqn.load_model('./dueling_checkpoint' + str(ckpt) + '.tar')
-    print('Start Populating by Model: ', ckpt)
-    for ep in range(50):
-      game.__init__()
-      R = 0
-      obs, reward, terminal = game.frame_step(np.array([1, 0]))
-      obs = cv2.cvtColor(cv2.resize(obs, (80, 80)), cv2.COLOR_BGR2GRAY)
-      _, obs = cv2.threshold(obs, 1, 255, cv2.THRESH_BINARY)
-      obs = np.reshape(obs, (1, 80, 80))
-      obs = np.concatenate([obs] * STACK_FRAMES, axis = 0)
-      while not terminal:
-        # Choose actions
-        if iterations % ACTION_IDLE == 0:
-          obs_tmp = torch.tensor(obs, dtype = torch.float32, device = device).reshape(1, STACK_FRAMES, 80, 80)
-          action = dqn.choose_action(obs_tmp, True)
-        else:
-          action = torch.tensor(0, dtype = torch.int64, device = device)
-        # Get next state
-        if action.cpu().numpy()[0] == 0:
-          act = np.array([1, 0])
-        elif action.cpu().numpy()[0] == 1:
-          act = np.array([0, 1])
-        obs_, reward, terminal = game.frame_step(act)
-        obs_ = cv2.cvtColor(cv2.resize(obs_, (80, 80)), cv2.COLOR_BGR2GRAY)
-        _, obs_ = cv2.threshold(obs_, 1, 255, cv2.THRESH_BINARY)
-        obs_ = np.reshape(obs_, (1, 80, 80))
-        obs_ = np.concatenate([obs_, obs[:3, ...]], axis = 0)
-        # Push transition to replay memory
-        transition = [obs, action, reward, obs_, terminal]
-        dqn.memory_store(transition)  
-        # Update
-        obs = obs_
-        R += reward
-      print('Episode: {}, Total Reward: {}'.format(ep, R))
-  print('Start training by Model: ', 4850)
-  episode, iterations = dqn.load_model('./dueling_checkpoint' + str(4850) + '.tar')
 
+BASE_PATH = '/content/' #'/content/drive/MyDrive/'
+a = os.listdir(BASE_PATH + 'ckpts')
+a.sort(key = lambda x: int(x.split('checkpoint')[1].split('.')[0]))
+avg_reward_list = []
 
-while episode <= EPISODE:
-  game.__init__()
-  R = 0
-  # Get the first frame and stack it 4 times
-  obs, reward, terminal = game.frame_step(np.array([1, 0]))
-  obs = cv2.cvtColor(cv2.resize(obs, (80, 80)), cv2.COLOR_BGR2GRAY)
-  _, obs = cv2.threshold(obs, 1, 255, cv2.THRESH_BINARY)
-  obs = np.reshape(obs, (1, 80, 80))
-  obs = np.concatenate([obs] * STACK_FRAMES, axis = 0)
-  while not terminal:
-    # Choose actions
-    if iterations % ACTION_IDLE == 0:
-      obs_tmp = torch.tensor(obs, dtype = torch.float32, device = device).reshape(1, STACK_FRAMES, 80, 80)
-      action = dqn.choose_action(obs_tmp)
-    else:
-      action = torch.tensor(0, dtype = torch.int64, device = device)
+for ckpt in a:  
+  _, model_itr = dqn.load_model(BASE_PATH + 'ckpts/' + ckpt)
+  avg_R = 0
+  iterations = 1
+  print('Model: {}'.format(ckpt))
+  for ep in range(EP):
+    game.__init__()
+    R = 0
+    if VIDEO: fourcc = cv2.VideoWriter_fourcc(*'XVID') # video
+    if VIDEO: video_writer = cv2.VideoWriter(BASE_PATH + 'result'+str(ep)+'.avi', fourcc, 30, (288, 512)) # video
 
-    # Get next state
-    if action.cpu().numpy()[0] == 0:
-      act = np.array([1, 0])
-    elif action.cpu().numpy()[0] == 1:
-      act = np.array([0, 1])
-    obs_, reward, terminal = game.frame_step(act)
-    obs_ = cv2.cvtColor(cv2.resize(obs_, (80, 80)), cv2.COLOR_BGR2GRAY)
-    _, obs_ = cv2.threshold(obs_, 1, 255, cv2.THRESH_BINARY)
-    obs_ = np.reshape(obs_, (1, 80, 80))
-    obs_ = np.concatenate([obs_, obs[:3, ...]], axis = 0)
-
-    # Push transition to replay memory
-    transition = [obs, action, reward, obs_, terminal]
-    dqn.memory_store(transition)
-
-    # Train
-    if iterations > OBSERVE:
-      dqn.update_epsilon()
-      dqn.train()
-    
-    # Update
-    obs = obs_
-    iterations += 1
-    R += reward
-    if iterations % SAVE_ITER  == 0 and iterations > OBSERVE:
-      dqn.save_model(episode, iterations)
-  
-  print('Episode: {}, Total Reward: {}, Iterations: {}, Epsilon: {}, Memory Size: {}'.format(episode, R, iterations, dqn.epsilon, len(dqn.replay_memory)))
-  episode += 1
+    obs, reward, terminal = game.frame_step(np.array([1, 0]))
+    if VIDEO: frame = cv2.cvtColor(cv2.flip(cv2.rotate(obs, cv2.ROTATE_90_CLOCKWISE), 1), cv2.COLOR_RGB2BGR) # video
+    if VIDEO: video_writer.write(frame) # video
+    obs = cv2.cvtColor(cv2.resize(obs, (80, 80)), cv2.COLOR_BGR2GRAY)
+    _, obs = cv2.threshold(obs, 1, 255, cv2.THRESH_BINARY)
+    obs = np.reshape(obs, (1, 80, 80))
+    obs = np.concatenate([obs] * 4, axis = 0)
+    while not terminal:
+      # Choose actions
+      if iterations % 1 == 0:
+        obs_tmp = torch.tensor(obs, dtype = torch.float32, device = device).reshape(1, 4, 80, 80)
+        action = dqn.choose_action(obs_tmp, False)
+      else:
+        action = torch.tensor(0, dtype = torch.int64, device = device)
+      # Get next state
+      if action.cpu().numpy()[0] == 0:
+        act = np.array([1, 0])
+      elif action.cpu().numpy()[0] == 1:
+        act = np.array([0, 1])
+      obs_, reward, terminal = game.frame_step(act)
+      if VIDEO: frame = cv2.cvtColor(cv2.flip(cv2.rotate(obs_, cv2.ROTATE_90_CLOCKWISE), 1), cv2.COLOR_RGB2BGR) # video
+      if VIDEO: video_writer.write(frame) # video
+      obs_ = cv2.cvtColor(cv2.resize(obs_, (80, 80)), cv2.COLOR_BGR2GRAY)
+      _, obs_ = cv2.threshold(obs_, 1, 255, cv2.THRESH_BINARY)
+      obs_ = np.reshape(obs_, (1, 80, 80))
+      obs_ = np.concatenate([obs_, obs[:3, ...]], axis = 0)
+      # Update
+      obs = obs_
+      R += reward
+    print('Episode: {}, Total Reward: {}'.format(ep+1, R))
+    avg_R += R
+    if VIDEO: video_writer.release()
+  print('Agent: {}, Avg Return: {}'.format(ckpt, avg_R/EP))
+  avg_reward_list.append([ckpt, model_itr, avg_R/EP])
+  if CSV:  
+    df = pd.DataFrame(avg_reward_list, columns = ['Filename', 'Iterations', 'Average Reward'])
+    df.to_csv(BASE_PATH + 'avg_reward.csv', index = False)
