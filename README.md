@@ -7,6 +7,8 @@ A Crazy Flappy Bird agent trained with Deep Reinforcement Learning
 
 [40 minutes version](https://drive.google.com/file/d/1EqPkHSgi2H_yW2NyRCQxY58HHk1lXriW/view?usp=sharing)
 
+[Download the checkpoint of our best agent](https://drive.google.com/file/d/1q86V9zRVL8vzmWzD4SHgqSS_ucHQllI7/view?usp=sharing)
+
 ### Contributors
 > Name: Fu-Lin Hsu     
 > Name: James Hu    
